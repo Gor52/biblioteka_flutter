@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../state/author_provider.dart';
+import '../state/genre_provider.dart';
 import '../state/book_provider.dart' show ScreenState;
 import '../models/list_filter.dart';
-import '../models/author.dart';
+import '../models/genre.dart';
 import '../widgets/adaptive_grid.dart';
 
-class AuthorScreen extends StatefulWidget {
+class GenreScreen extends StatefulWidget {
   final ListFilter initFilter;
-  const AuthorScreen({super.key, required this.initFilter});
+  const GenreScreen({super.key, required this.initFilter});
 
   @override
-  State<AuthorScreen> createState() => _AuthorScreenState();
+  State<GenreScreen> createState() => _GenreScreenState();
 }
 
-class _AuthorScreenState extends State<AuthorScreen> {
+class _GenreScreenState extends State<GenreScreen> {
   final _searchCtrl = TextEditingController();
 
   @override
@@ -23,13 +23,13 @@ class _AuthorScreenState extends State<AuthorScreen> {
     super.initState();
     _searchCtrl.text = widget.initFilter.search;
     WidgetsBinding.instance.addPostFrameCallback((_) => 
-      context.read<AuthorProvider>().updateFilter(widget.initFilter)
+      context.read<GenreProvider>().updateFilter(widget.initFilter)
     );
   }
 
   void _applyFilter(ListFilter f) {
-    context.read<AuthorProvider>().updateFilter(f);
-    context.go(Uri(path: '/authors', queryParameters: {
+    context.read<GenreProvider>().updateFilter(f);
+    context.go(Uri(path: '/genres', queryParameters: {
       if (f.search.isNotEmpty) 'search': f.search, 
       'sort': f.sortBy, 
       'asc': f.isAscending.toString(),
@@ -41,12 +41,12 @@ class _AuthorScreenState extends State<AuthorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prov = context.watch<AuthorProvider>();
+    final prov = context.watch<GenreProvider>();
     final f = prov.filter;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Справочник авторов'),
+        title: const Text('Жанры'), 
         leading: BackButton(onPressed: () => context.go('/')),
         actions: [
           Row(
@@ -61,7 +61,7 @@ class _AuthorScreenState extends State<AuthorScreen> {
             IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
           if (prov.selectedIds.isNotEmpty) 
             IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => prov.executeBatch('hard')),
-          IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/authors/new')),
+          IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/genres/new')),
         ],
       ),
       body: Column(
@@ -70,29 +70,24 @@ class _AuthorScreenState extends State<AuthorScreen> {
             padding: const EdgeInsets.all(16.0), 
             child: TextField(
               controller: _searchCtrl, 
-              decoration: const InputDecoration(labelText: 'Поиск по ФИО', prefixIcon: Icon(Icons.search)), 
+              decoration: const InputDecoration(labelText: 'Поиск по названию', prefixIcon: Icon(Icons.search)), 
               onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
             )
           ),
           Expanded(
             child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
-                   prov.state == ScreenState.error ? Center(child: Text('Ошибка: ${prov.error}')) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Авторы не найдены.')) :
-                   AdaptiveDataGrid<Author>(
+                   prov.state == ScreenState.empty ? const Center(child: Text('Пусто.')) :
+                   AdaptiveDataGrid<Genre>(
                      items: prov.data.items, 
-                     idExtractor: (a) => a.id, 
-                     isDeleted: (a) => a.isDeleted,
+                     idExtractor: (g) => g.id, 
+                     isDeleted: (g) => g.isDeleted,
                      selectedIds: prov.selectedIds, 
                      onToggle: prov.toggleSelection, 
                      currentSort: f.sortBy, 
                      isAscending: f.isAscending,
                      onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/authors/$id'),
-                     columns: [
-                       ColumnDef(title: 'Фамилия', sortKey: 'lastName', valueBuilder: (a) => a.lastName),
-                       ColumnDef(title: 'Имя', sortKey: 'firstName', valueBuilder: (a) => a.firstName),
-                       ColumnDef(title: 'Год рождения', sortKey: 'birthYear', valueBuilder: (a) => a.birthYear.toString()),
-                     ],
+                     onRowTap: (id) => context.go('/genres/$id'),
+                     columns: [ColumnDef(title: 'Название', sortKey: 'name', valueBuilder: (g) => g.name)],
                    ),
           ),
           if (prov.state == ScreenState.data)

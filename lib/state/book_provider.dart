@@ -4,28 +4,42 @@ import '../models/list_filter.dart';
 import '../models/page_data.dart';
 import '../repositories/book_repo.dart';
 
-enum ScreenState { loading, data, empty, error }
+enum ScreenState { loading, error, empty, data }
 
 class BookProvider extends ChangeNotifier {
   final BookRepo repo;
   BookProvider(this.repo);
 
-  ListFilter _filter = const ListFilter(sortBy: 'title');
-  PageData<Book> _pageData = PageData.empty();
+  ListFilter _filter = const ListFilter();
+  PageData<Book> _data = const PageData(items: [], totalItems: 0, currentPage: 1, pageSize: 10);
   ScreenState _state = ScreenState.loading;
-  String? _errMsg;
+  String _error = '';
   final Set<int> _selectedIds = {};
 
   ListFilter get filter => _filter;
-  PageData<Book> get data => _pageData;
+  PageData<Book> get data => _data;
   ScreenState get state => _state;
-  Set<int> get selectedIds => _selectedIds;
-  String? get error => _errMsg;
+  String get error => _error;
 
-  Future<void> updateFilter(ListFilter next) async {
-    _filter = next;
+  Set<int> get selectedIds => _selectedIds; 
+
+  Future<void> updateFilter(ListFilter newFilter) async {
+    _filter = newFilter;
     _selectedIds.clear();
-    await _fetch();
+    await loadData();
+  }
+
+  Future<void> loadData() async {
+    _state = ScreenState.loading;
+    notifyListeners();
+    try {
+      _data = await repo.fetch(_filter);
+      _state = _data.items.isEmpty ? ScreenState.empty : ScreenState.data;
+    } catch (e) {
+      _error = e.toString();
+      _state = ScreenState.error;
+    }
+    notifyListeners();
   }
 
   void toggleSelection(int id) {
@@ -34,29 +48,11 @@ class BookProvider extends ChangeNotifier {
   }
 
   Future<void> executeBatch(String action) async {
-    if (_selectedIds.isEmpty) return;
-    _state = ScreenState.loading;
-    notifyListeners();
-    
     final ids = _selectedIds.toList();
     if (action == 'soft') await repo.removeSoft(ids);
-    if (action == 'hard') await repo.removeHard(ids);
-    if (action == 'restore') await repo.recover(ids);
-    
+    else if (action == 'hard') await repo.removeHard(ids);
+    else if (action == 'restore') await repo.restore(ids);
     _selectedIds.clear();
-    await _fetch();
-  }
-
-  Future<void> _fetch() async {
-    _state = ScreenState.loading;
-    notifyListeners();
-    try {
-      _pageData = await repo.fetch(_filter);
-      _state = _pageData.items.isEmpty ? ScreenState.empty : ScreenState.data;
-    } catch (e) {
-      _state = ScreenState.error;
-      _errMsg = e.toString();
-    }
-    notifyListeners();
+    await loadData();
   }
 }

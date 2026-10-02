@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
-import '../models/author.dart';
+import '../models/genre.dart';
 import '../models/list_filter.dart';
 import '../models/page_data.dart';
-import '../repositories/author_repo.dart';
+import '../repositories/genre_repo.dart';
 import 'book_provider.dart'; 
 
-class AuthorProvider extends ChangeNotifier {
-  final AuthorRepo repo;
-  AuthorProvider(this.repo);
+class GenreProvider extends ChangeNotifier {
+  final GenreRepo repo;
+  GenreProvider(this.repo);
 
   ListFilter _filter = const ListFilter();
-  PageData<Author> _data = const PageData(items: [], totalItems: 0, currentPage: 1, pageSize: 10);
+  PageData<Genre> _data = const PageData(items: [], totalItems: 0, currentPage: 1, pageSize: 10);
   ScreenState _state = ScreenState.loading;
   String _error = '';
   final Set<int> _selectedIds = {};
 
   ListFilter get filter => _filter;
-  PageData<Author> get data => _data;
+  PageData<Genre> get data => _data;
   ScreenState get state => _state;
   String get error => _error;
   Set<int> get selectedIds => _selectedIds;

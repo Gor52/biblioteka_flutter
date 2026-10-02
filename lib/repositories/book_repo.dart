@@ -1,81 +1,118 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/book.dart';
 import '../models/list_filter.dart';
 import '../models/page_data.dart';
 
 class BookRepo {
-  final List<Book> _db = [
-    const Book(id: 1, title: 'Мастер и Маргарита', isbn: '978-5-17-087888-1', year: 1967, pages: 416, genreId: 3, publisherId: 1),
-    const Book(id: 2, title: 'Преступление и наказание', isbn: '978-5-699-10811-4', year: 1866, pages: 592, genreId: 3, publisherId: 2),
-    const Book(id: 3, title: '1984', isbn: '978-5-17-099238-9', year: 1949, pages: 320, genreId: 1, publisherId: 1),
-    const Book(id: 4, title: 'Дюна', isbn: '978-5-17-101744-9', year: 1965, pages: 704, genreId: 1, publisherId: 2),
-    const Book(id: 5, title: 'Убийство в Восточном экспрессе', isbn: '978-5-699-11522-8', year: 1934, pages: 256, genreId: 2, publisherId: 1),
-    const Book(id: 6, title: 'Десять негритят', isbn: '978-5-699-11523-5', year: 1939, pages: 320, genreId: 2, publisherId: 2),
-    const Book(id: 7, title: 'Этюд в багровых тонах', isbn: '978-5-17-099244-0', year: 1887, pages: 224, genreId: 2, publisherId: 1),
-    const Book(id: 8, title: 'Метро 2033', isbn: '978-5-17-102222-1', year: 2005, pages: 384, genreId: 1, publisherId: 2),
-    const Book(id: 9, title: 'Евгений Онегин', isbn: '978-5-17-085555-4', year: 1833, pages: 224, genreId: 3, publisherId: 1),
-    const Book(id: 10, title: 'Солярис', isbn: '978-5-17-091111-3', year: 1961, pages: 288, genreId: 1, publisherId: 2),
-    const Book(id: 11, title: 'Анна Каренина', isbn: '978-5-699-12222-6', year: 1878, pages: 864, genreId: 3, publisherId: 1),
-    const Book(id: 12, title: 'Гордость и предубеждение', isbn: '978-5-17-088888-0', year: 1813, pages: 416, genreId: 3, publisherId: 2),
-    const Book(id: 13, title: 'Пикник на обочине', isbn: '978-5-17-077777-1', year: 1972, pages: 256, genreId: 1, publisherId: 1),
-    const Book(id: 14, title: 'Три товарища', isbn: '978-5-17-066666-2', year: 1936, pages: 480, genreId: 3, publisherId: 2),
-    const Book(id: 15, title: 'Великий Гэтсби', isbn: '978-5-17-055555-3', year: 1925, pages: 256, genreId: 3, publisherId: 1),
-    const Book(id: 16, title: 'Марсианин', isbn: '978-5-17-044444-4', year: 2011, pages: 368, genreId: 1, publisherId: 2),
-    const Book(id: 17, title: 'Собачье сердце', isbn: '978-5-17-033333-5', year: 1968, pages: 288, genreId: 3, publisherId: 1),
-    const Book(id: 18, title: 'Дракула', isbn: '978-5-17-022222-6', year: 1897, pages: 416, genreId: 1, publisherId: 2),
-    const Book(id: 19, title: 'Код да Винчи', isbn: '978-5-17-011111-7', year: 2003, pages: 544, genreId: 2, publisherId: 1),
-    const Book(id: 20, title: 'Мёртвые души', isbn: '978-5-17-099999-8', year: 1842, pages: 352, genreId: 3, publisherId: 2),
-    const Book(id: 21, title: 'Зов Ктулху', isbn: '978-5-17-088877-9', year: 1928, pages: 320, genreId: 1, publisherId: 1),
-    const Book(id: 22, title: 'Девушка с татуировкой дракона', isbn: '978-5-699-13333-1', year: 2005, pages: 624, genreId: 2, publisherId: 2),
-    const Book(id: 23, title: 'Граф Монте-Кристо', isbn: '978-5-699-14444-2', year: 1844, pages: 1200, genreId: 3, publisherId: 1),
-    const Book(id: 24, title: 'Мы', isbn: '978-5-699-15555-3', year: 1920, pages: 224, genreId: 1, publisherId: 2),
-    const Book(id: 25, title: 'Капитанская дочка', isbn: '978-5-699-16666-4', year: 1836, pages: 320, genreId: 3, publisherId: 1),
-  ];
+  static const _key = 'books_v1';
+  final SharedPreferences _prefs;
+  List<Book> _db = [];
+
+  BookRepo(this._prefs) {
+    _restore();
+  }
+
+  void _restore() {
+    final raw = _prefs.getString(_key);
+    if (raw == null) {
+      _db = [
+        const Book(id: 1, title: 'Война и мир', isbn: '9785171123456', year: 1869, pages: 1225, publisherId: 1, authorIds: [1], genreIds: [3]),
+        const Book(id: 2, title: 'Мастер и Маргарита', isbn: '9785171123458', year: 1940, pages: 480, publisherId: 1, authorIds: [3], genreIds: [1, 3]),
+      ];
+      _save();
+    } else {
+      try { 
+        _db = (jsonDecode(raw) as List).map((e) => Book.fromJson(e)).toList(); 
+      } catch (_) { 
+        _db = []; 
+      }
+    }
+  }
+
+  Future<void> _save() async => await _prefs.setString(_key, jsonEncode(_db.map((b) => b.toJson()).toList()));
 
   Future<PageData<Book>> fetch(ListFilter f) async {
-
-    await Future.delayed(const Duration(milliseconds: 300));
-
+    await Future.delayed(const Duration(milliseconds: 200));
     var items = _db.where((b) => f.showDeleted || !b.isDeleted).toList();
 
     if (f.search.trim().isNotEmpty) {
-      final q = f.search.trim().toLowerCase();
-      items = items.where((b) => b.title.toLowerCase().contains(q) || b.isbn.toLowerCase().contains(q)).toList();
+      final s = f.search.trim().toLowerCase();
+      items = items.where((b) => b.title.toLowerCase().contains(s) || b.isbn.toLowerCase().contains(s)).toList();
     }
-
-    if (f.genreId != null) items = items.where((b) => b.genreId == f.genreId).toList();
+    if (f.genreId != null) items = items.where((b) => b.genreIds.contains(f.genreId)).toList();
     if (f.publisherId != null) items = items.where((b) => b.publisherId == f.publisherId).toList();
-    if (f.minYear != null) items = items.where((b) => b.year >= f.minYear!).toList();
-
+    
     items.sort((a, b) {
-      int comp = switch (f.sortBy) {
-        'year' => a.year.compareTo(b.year),
-        'pages' => a.pages.compareTo(b.pages),
-        _ => a.title.compareTo(b.title),
+      int cmp = switch (f.sortBy) { 
+        'year' => a.year.compareTo(b.year), 
+        'pages' => a.pages.compareTo(b.pages), 
+        _ => a.title.toLowerCase().compareTo(b.title.toLowerCase()) 
       };
-      return f.isAscending ? comp : -comp;
+      return f.isAscending ? cmp : -cmp;
     });
 
-    final total = items.length;
     final start = (f.page - 1) * f.limit;
-    final end = (start + f.limit).clamp(0, total);
-    final paged = start >= total ? <Book>[] : items.sublist(start, end);
+    if (start >= items.length) {
+      return PageData(items: [], totalItems: items.length, currentPage: f.page, pageSize: f.limit);
+    }
+    final end = (start + f.limit > items.length) ? items.length : (start + f.limit);
+    return PageData(items: items.sublist(start, end), totalItems: items.length, currentPage: f.page, pageSize: f.limit);
+  }
 
-    return PageData(items: paged, currentPage: f.page, pageSize: f.limit, totalItems: total);
+  Future<Book?> findById(int id) async {
+    try { return _db.firstWhere((b) => b.id == id); } catch (_) { return null; }
+  }
+
+  bool isIsbnTaken(String isbn, {int? excludeId}) {
+    final clean = isbn.replaceAll(RegExp(r'[-\s]'), '');
+    return _db.any((b) => b.id != excludeId && b.isbn.replaceAll(RegExp(r'[-\s]'), '') == clean);
+  }
+
+  int countBooksByPublisher(int publisherId) {
+    return _db.where((b) => b.publisherId == publisherId && !b.isDeleted).length;
+  }
+
+  Future<void> saveOrUpdate(Book book) async {
+    final index = _db.indexWhere((b) => b.id == book.id);
+    if (index != -1) {
+      _db[index] = book;
+    } else {
+      final newId = _db.isEmpty ? 1 : (_db.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
+      _db.add(Book(
+        id: newId,
+        title: book.title,
+        isbn: book.isbn,
+        year: book.year,
+        pages: book.pages,
+        publisherId: book.publisherId,
+        authorIds: book.authorIds,
+        genreIds: book.genreIds,
+        copiesTotal: book.copiesTotal,
+        copiesAvailable: book.copiesAvailable,
+      )); 
+    }
+    await _save();
   }
 
   Future<void> removeSoft(List<int> ids) async {
-    for (var id in ids) {
-      final idx = _db.indexWhere((b) => b.id == id && !b.isDeleted); 
-      if (idx != -1) _db[idx] = _db[idx].copyWith(deletedAt: DateTime.now());
+    for (final id in ids) {
+      final i = _db.indexWhere((b) => b.id == id && !b.isDeleted);
+      if (i != -1) _db[i] = _db[i].copyWith(deletedAt: DateTime.now());
     }
+    await _save();
   }
 
-  Future<void> removeHard(List<int> ids) async => _db.removeWhere((b) => ids.contains(b.id));
+  Future<void> removeHard(List<int> ids) async {
+    _db.removeWhere((b) => ids.contains(b.id) && b.isDeleted);
+    await _save();
+  }
 
-  Future<void> recover(List<int> ids) async {
-    for (var id in ids) {
-      final idx = _db.indexWhere((b) => b.id == id);
-      if (idx != -1) _db[idx] = _db[idx].copyWith(restore: true);
+  Future<void> restore(List<int> ids) async {
+    for (final id in ids) {
+      final i = _db.indexWhere((b) => b.id == id && b.isDeleted);
+      if (i != -1) _db[i] = _db[i].copyWith(clearDeletedAt: true);
     }
+    await _save();
   }
 }

@@ -16,10 +16,25 @@ class HomeScreen extends StatelessWidget {
               onPressed: () => context.go('/books'),
               icon: const Icon(Icons.book), label: const Text('Каталог книг'),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () => context.go('/authors'),
               icon: const Icon(Icons.person), label: const Text('Справочник авторов'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => context.go('/readers'),
+              icon: const Icon(Icons.card_membership), label: const Text('Читатели'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => context.go('/publishers'),
+              icon: const Icon(Icons.business), label: const Text('Издательства'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => context.go('/genres'),
+              icon: const Icon(Icons.category), label: const Text('Жанры'),
             ),
           ],
         ),

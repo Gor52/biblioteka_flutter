@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../state/book_provider.dart';
-import '../repositories/genre_repo.dart';
-import '../repositories/publisher_repo.dart';
+import '../state/reader_provider.dart';
+import '../state/book_provider.dart' show ScreenState;
 import '../models/list_filter.dart';
-import '../models/book.dart';
+import '../models/reader.dart';
 import '../widgets/adaptive_grid.dart';
 
-class BookScreen extends StatefulWidget {
+class ReaderScreen extends StatefulWidget {
   final ListFilter initFilter;
-  const BookScreen({super.key, required this.initFilter});
+  const ReaderScreen({super.key, required this.initFilter});
 
   @override
-  State<BookScreen> createState() => _BookScreenState();
+  State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _BookScreenState extends State<BookScreen> {
+class _ReaderScreenState extends State<ReaderScreen> {
   final _searchCtrl = TextEditingController();
 
   @override
@@ -24,36 +23,30 @@ class _BookScreenState extends State<BookScreen> {
     super.initState();
     _searchCtrl.text = widget.initFilter.search;
     WidgetsBinding.instance.addPostFrameCallback((_) => 
-      context.read<BookProvider>().updateFilter(widget.initFilter)
+      context.read<ReaderProvider>().updateFilter(widget.initFilter)
     );
   }
 
   void _applyFilter(ListFilter f) {
-    context.read<BookProvider>().updateFilter(f);
-    context.go(Uri(path: '/books', queryParameters: {
+    context.read<ReaderProvider>().updateFilter(f);
+    context.go(Uri(path: '/readers', queryParameters: {
       if (f.search.isNotEmpty) 'search': f.search, 
       'sort': f.sortBy, 
       'asc': f.isAscending.toString(),
       'page': f.page.toString(), 
       'limit': f.limit.toString(), 
       if (f.showDeleted) 'deleted': 'true',
-      if (f.genreId != null) 'genre': f.genreId.toString(),
-      if (f.publisherId != null) 'pub': f.publisherId.toString(),
     }).toString());
   }
 
   @override
   Widget build(BuildContext context) {
-    final prov = context.watch<BookProvider>();
+    final prov = context.watch<ReaderProvider>();
     final f = prov.filter;
-    
-    // Получаем справочники для фильтров
-    final genres = context.watch<GenreRepo>().getAllActive();
-    final publishers = context.watch<PublisherRepo>().getAllActive();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Каталог книг'),
+        title: const Text('Читатели'),
         leading: BackButton(onPressed: () => context.go('/')),
         actions: [
           Row(
@@ -68,74 +61,37 @@ class _BookScreenState extends State<BookScreen> {
             IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
           if (prov.selectedIds.isNotEmpty) 
             IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => prov.executeBatch('hard')),
-          IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/books/new')),
+          IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/readers/new')),
         ],
       ),
       body: Column(
         children: [
-          // ПАНЕЛЬ ПОИСКА И ФИЛЬТРОВ (сверху)
           Padding(
             padding: const EdgeInsets.all(16.0), 
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: _searchCtrl, 
-                    decoration: const InputDecoration(labelText: 'Поиск по названию или ISBN', prefixIcon: Icon(Icons.search)), 
-                    onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 1,
-                  child: DropdownButtonFormField<int?>(
-                    value: f.genreId,
-                    decoration: const InputDecoration(labelText: 'Жанр'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Все жанры')),
-                      ...genres.map((g) => DropdownMenuItem(value: g.id, child: Text(g.name)))
-                    ],
-                    // Пересоздаем фильтр, чтобы корректно сбросить null значения
-                    onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: v, publisherId: f.publisherId)),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 1,
-                  child: DropdownButtonFormField<int?>(
-                    value: f.publisherId,
-                    decoration: const InputDecoration(labelText: 'Издательство'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Все издательства')),
-                      ...publishers.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
-                    ],
-                    onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: f.genreId, publisherId: v)),
-                  ),
-                ),
-              ],
+            child: TextField(
+              controller: _searchCtrl, 
+              decoration: const InputDecoration(labelText: 'Поиск по имени или email', prefixIcon: Icon(Icons.search)), 
+              onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
             )
           ),
           Expanded(
             child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
                    prov.state == ScreenState.error ? Center(child: Text('Ошибка: ${prov.error}')) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Книги не найдены.')) :
-                   AdaptiveDataGrid<Book>(
+                   prov.state == ScreenState.empty ? const Center(child: Text('Читатели не найдены.')) :
+                   AdaptiveDataGrid<Reader>(
                      items: prov.data.items, 
-                     idExtractor: (b) => b.id, 
-                     isDeleted: (b) => b.isDeleted,
+                     idExtractor: (r) => r.id, 
+                     isDeleted: (r) => r.isDeleted,
                      selectedIds: prov.selectedIds, 
                      onToggle: prov.toggleSelection, 
                      currentSort: f.sortBy, 
                      isAscending: f.isAscending,
                      onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/books/$id'),
+                     onRowTap: (id) => context.go('/readers/$id'),
                      columns: [
-                       ColumnDef(title: 'Название', sortKey: 'title', valueBuilder: (b) => b.title),
-                       ColumnDef(title: 'ISBN', sortKey: 'isbn', valueBuilder: (b) => b.isbn),
-                       ColumnDef(title: 'Год', sortKey: 'year', valueBuilder: (b) => b.year.toString()),
-                       ColumnDef(title: 'Страниц', sortKey: 'pages', valueBuilder: (b) => b.pages.toString()),
+                       ColumnDef(title: 'ФИО', sortKey: 'fullName', valueBuilder: (r) => r.fullName),
+                       ColumnDef(title: 'E-mail', sortKey: 'email', valueBuilder: (r) => r.email),
+                       ColumnDef(title: 'Телефон', sortKey: 'phone', valueBuilder: (r) => r.phone),
                      ],
                    ),
           ),
