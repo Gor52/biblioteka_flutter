@@ -5,6 +5,7 @@ import '../models/author.dart';
 import '../utils/validators.dart';
 import '../widgets/generic_form_layout.dart';
 import '../repositories/author_repo.dart';
+import '../core/api_exceptions.dart';
 
 class AuthorFormScreen extends StatefulWidget {
   final int? authorId;
@@ -18,7 +19,6 @@ class AuthorFormScreen extends StatefulWidget {
 
 class _AuthorFormScreenState extends State<AuthorFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  
   final _lastNameCtrl = TextEditingController();
   final _firstNameCtrl = TextEditingController();
   final _countryCtrl = TextEditingController();
@@ -26,6 +26,8 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
   
   bool _isLoading = true;
   bool _isDirty = false;
+  bool _saving = false;
+  Map<String, String> _serverErrors = {};
 
   @override
   void initState() {
@@ -47,69 +49,84 @@ class _AuthorFormScreenState extends State<AuthorFormScreen> {
   }
 
   void _submit() async {
+    setState(() => _serverErrors = {});
     if (!_formKey.currentState!.validate()) return;
     
-    await context.read<AuthorRepo>().saveOrUpdate(Author(
-      id: widget.authorId ?? 0, 
-      lastName: _lastNameCtrl.text,
-      firstName: _firstNameCtrl.text,
-      country: _countryCtrl.text,
-      birthYear: int.parse(_birthYearCtrl.text),
-    ));
+    setState(() => _saving = true);
     
-    _isDirty = false;
-    if (mounted) context.go('/authors');
+    try {
+      final author = Author(
+        id: widget.authorId ?? 0, 
+        lastName: _lastNameCtrl.text,
+        firstName: _firstNameCtrl.text,
+        country: _countryCtrl.text,
+        birthYear: int.parse(_birthYearCtrl.text),
+      );
+      
+      await context.read<AuthorRepo>().saveOrUpdate(author);
+      _isDirty = false;
+      if (mounted) context.go('/authors');
+      
+    } on ValidationException catch (e) {
+      setState(() => _serverErrors = e.errors);
+      _formKey.currentState!.validate(); 
+    } on ConflictException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return GenericFormLayout(
       title: widget.isEditing ? 'Редактирование автора' : 'Новый автор',
       isDirty: _isDirty, 
       formKey: _formKey, 
-      submitLabel: 'Сохранить автора',
-      onMarkDirty: () { 
-        if (!_isDirty) setState(() => _isDirty = true); 
-      }, 
-      onSubmit: _submit, 
-      onBack: () => context.go('/authors'), // Явный путь назад для правильной работы роутера
+      submitLabel: _saving ? 'Сохранение...' : 'Сохранить',
+      onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); }, 
+      onSubmit: _saving ? () {} : _submit, 
+      onBack: () => context.go('/authors'),
       fields: [
-        const Text('Основная информация', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        const SizedBox(height: 8),
         TextFormField(
           controller: _lastNameCtrl, 
+          enabled: !_saving,
           decoration: const InputDecoration(labelText: 'Фамилия *'), 
-          validator: AppValidators.requiredField
+          validator: (v) => _serverErrors['lastName'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
         ),
         const SizedBox(height: 16),
         TextFormField(
           controller: _firstNameCtrl, 
-          decoration: const InputDecoration(labelText: 'Имя')
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'Имя'), 
+          validator: (v) => _serverErrors['firstName'],
+          onChanged: (_) => setState(() => _isDirty = true),
         ),
-        const SizedBox(height: 24),
-
-        const Text('Дополнительные данные', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
               child: TextFormField(
                 controller: _countryCtrl, 
+                enabled: !_saving,
                 decoration: const InputDecoration(labelText: 'Страна *'), 
-                validator: AppValidators.requiredField
+                validator: (v) => _serverErrors['country'] ?? AppValidators.requiredField(v),
+                onChanged: (_) => setState(() => _isDirty = true),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: TextFormField(
                 controller: _birthYearCtrl, 
+                enabled: !_saving,
                 decoration: const InputDecoration(labelText: 'Год рождения *'), 
-                keyboardType: TextInputType.number, 
-                validator: AppValidators.year
+                validator: (v) => _serverErrors['birthYear'] ?? AppValidators.year(v),
+                onChanged: (_) => setState(() => _isDirty = true),
               ),
             ),
           ],

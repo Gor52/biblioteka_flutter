@@ -3,16 +3,20 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../models/book.dart';
 import '../models/author.dart';
-import '../repositories/book_repo.dart';
-import '../repositories/author_repo.dart';
-import '../repositories/publisher_repo.dart';
-import '../repositories/genre_repo.dart';
+import '../models/publisher.dart';
+import '../models/genre.dart';
 import '../utils/validators.dart';
 import '../widgets/generic_form_layout.dart';
+import '../repositories/book_repo.dart';
+import '../repositories/publisher_repo.dart';
+import '../repositories/author_repo.dart';
+import '../repositories/genre_repo.dart';
+import '../core/api_exceptions.dart';
 
 class BookFormScreen extends StatefulWidget {
   final int? bookId;
   const BookFormScreen({super.key, this.bookId});
+  
   bool get isEditing => bookId != null;
 
   @override
@@ -21,20 +25,21 @@ class BookFormScreen extends StatefulWidget {
 
 class _BookFormScreenState extends State<BookFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  
   final _titleCtrl = TextEditingController();
   final _isbnCtrl = TextEditingController();
   final _yearCtrl = TextEditingController();
-  final _pagesCtrl = TextEditingController();           
-  final _copiesTotalCtrl = TextEditingController();    
-  final _copiesAvailableCtrl = TextEditingController(); 
-
+  final _pagesCtrl = TextEditingController();
+  final _copiesTotalCtrl = TextEditingController();
+  
   int? _selectedPublisherId;
   List<int> _selectedAuthorIds = [];
   List<int> _selectedGenreIds = [];
-  String? _isbnErrorText;
   
   bool _isLoading = true;
   bool _isDirty = false;
+  bool _saving = false;
+  Map<String, String> _serverErrors = {};
 
   @override
   void initState() {
@@ -51,152 +56,216 @@ class _BookFormScreenState extends State<BookFormScreen> {
         _yearCtrl.text = book.year.toString();
         _pagesCtrl.text = book.pages.toString();
         _copiesTotalCtrl.text = book.copiesTotal.toString();
-        _copiesAvailableCtrl.text = book.copiesAvailable.toString();
-        
         _selectedPublisherId = book.publisherId;
-        _selectedAuthorIds = List.from(book.authorIds);
-        _selectedGenreIds = List.from(book.genreIds);
+        _selectedAuthorIds = book.authorIds;
+        _selectedGenreIds = book.genreIds;
       }
-    } else {
-      _pagesCtrl.text = '100';
-      _copiesTotalCtrl.text = '1';
-      _copiesAvailableCtrl.text = '1';
     }
     setState(() => _isLoading = false);
   }
 
   void _submit() async {
-    setState(() => _isbnErrorText = null); 
+    setState(() => _serverErrors = {});
     if (!_formKey.currentState!.validate()) return;
-
-    final repo = context.read<BookRepo>();
     
-    if (repo.isIsbnTaken(_isbnCtrl.text, excludeId: widget.bookId)) {
-      setState(() {
-        _isbnErrorText = 'Этот ISBN уже зарегистрирован';
-        _formKey.currentState!.validate();
-      });
-      return;
+    setState(() => _saving = true);
+    
+    try {
+      final book = Book(
+        id: widget.bookId ?? 0, 
+        title: _titleCtrl.text,
+        isbn: _isbnCtrl.text,
+        year: int.parse(_yearCtrl.text),
+        pages: int.parse(_pagesCtrl.text),
+        publisherId: _selectedPublisherId!,
+        authorIds: _selectedAuthorIds,
+        genreIds: _selectedGenreIds,
+        copiesTotal: int.parse(_copiesTotalCtrl.text),
+      );
+      
+      await context.read<BookRepo>().saveOrUpdate(book);
+      _isDirty = false;
+      if (mounted) context.go('/books');
+      
+    } on ValidationException catch (e) {
+      setState(() => _serverErrors = e.errors);
+      _formKey.currentState!.validate(); 
+    } on ConflictException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-
-    await repo.saveOrUpdate(Book(
-      id: widget.bookId ?? 0,
-      title: _titleCtrl.text,
-      isbn: _isbnCtrl.text,
-      year: int.parse(_yearCtrl.text),
-      pages: int.parse(_pagesCtrl.text),
-      copiesTotal: int.parse(_copiesTotalCtrl.text),
-      copiesAvailable: int.parse(_copiesAvailableCtrl.text),
-      publisherId: _selectedPublisherId!,
-      authorIds: _selectedAuthorIds,
-      genreIds: _selectedGenreIds,
-    ));
-    
-    _isDirty = false;
-    if (mounted) context.go('/books');
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    
-    final allPublishers = context.read<PublisherRepo>().getAllActive();
-    final allAuthors = context.read<AuthorRepo>().getAllActive();
-    final allGenres = context.read<GenreRepo>().getAllActive();
-    
-    List<Author> availableAuthors = allAuthors;
-    if (_selectedPublisherId != null) {
-      availableAuthors = allAuthors.where((a) => a.lastName.length % 2 == _selectedPublisherId! % 2).toList();
-    }
+
+    final allPublishers = context.watch<PublisherRepo>().getAllActive();
+    final allAuthors = context.watch<AuthorRepo>().getAllActive();
+    final allGenres = context.watch<GenreRepo>().getAllActive();
 
     return GenericFormLayout(
       title: widget.isEditing ? 'Редактирование книги' : 'Новая книга',
-      isDirty: _isDirty,
-      formKey: _formKey,
-      submitLabel: 'Сохранить книгу',
-      onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); },
-      onSubmit: _submit,
+      isDirty: _isDirty, 
+      formKey: _formKey, 
+      submitLabel: _saving ? 'Сохранение...' : 'Сохранить книгу',
+      onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); }, 
+      onSubmit: _saving ? () {} : _submit, 
       onBack: () => context.go('/books'),
       fields: [
-        const Text('Основная информация', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        const SizedBox(height: 8),
-        TextFormField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Название *'), validator: AppValidators.requiredField),
+        TextFormField(
+          controller: _titleCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'Название *'), 
+          validator: (v) => _serverErrors['title'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
+        ),
         const SizedBox(height: 16),
-        TextFormField(controller: _isbnCtrl, decoration: const InputDecoration(labelText: 'ISBN (10 или 13 цифр) *'), validator: (v) { if (_isbnErrorText != null) return _isbnErrorText; return AppValidators.isbn(v); }),
+        TextFormField(
+          controller: _isbnCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'ISBN *'), 
+          validator: (v) => _serverErrors['isbn'] ?? AppValidators.isbn(v),
+          onChanged: (_) => setState(() => _isDirty = true),
+        ),
         const SizedBox(height: 16),
-        
         Row(
           children: [
-            Expanded(child: TextFormField(controller: _yearCtrl, decoration: const InputDecoration(labelText: 'Год издания *'), keyboardType: TextInputType.number, validator: AppValidators.year)),
+            Expanded(
+              child: TextFormField(
+                controller: _yearCtrl, 
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Год издания *'), 
+                validator: (v) => _serverErrors['year'] ?? AppValidators.year(v),
+                onChanged: (_) => setState(() => _isDirty = true),
+              ),
+            ),
             const SizedBox(width: 16),
-            Expanded(child: TextFormField(controller: _pagesCtrl, decoration: const InputDecoration(labelText: 'Кол-во страниц *'), keyboardType: TextInputType.number, validator: AppValidators.positiveInt)),
+            Expanded(
+              child: TextFormField(
+                controller: _pagesCtrl, 
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Страниц *'), 
+                validator: (v) => _serverErrors['pages'] ?? AppValidators.positiveInt(v),
+                onChanged: (_) => setState(() => _isDirty = true),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: TextFormField(
+                controller: _copiesTotalCtrl, 
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Всего экземпляров *'), 
+                validator: (v) => _serverErrors['copiesTotal'] ?? AppValidators.positiveInt(v),
+                onChanged: (_) => setState(() => _isDirty = true),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 24),
 
-        const Text('Учет экземпляров', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: TextFormField(controller: _copiesTotalCtrl, decoration: const InputDecoration(labelText: 'Всего экземпляров *'), keyboardType: TextInputType.number, validator: AppValidators.positiveInt)),
-            const SizedBox(width: 16),
-            Expanded(child: TextFormField(controller: _copiesAvailableCtrl, decoration: const InputDecoration(labelText: 'Доступно для выдачи *'), keyboardType: TextInputType.number, validator: AppValidators.positiveInt)),
-          ],
+        FutureBuilder<List<Publisher>>(
+          future: allPublishers,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? [];
+            return DropdownButtonFormField<int>(
+              value: _selectedPublisherId,
+              decoration: const InputDecoration(labelText: 'Издательство *'),
+              items: items.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(),
+              onChanged: _saving ? null : (v) {
+                setState(() {
+                  _selectedPublisherId = v;
+                  _isDirty = true;
+                });
+              },
+              validator: (v) => _serverErrors['publisherId'] ?? (v == null ? 'Выберите издательство' : null),
+            );
+          }
         ),
         const SizedBox(height: 24),
 
-        const Text('Связи и категоризация', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<int>(
-          value: _selectedPublisherId,
-          decoration: const InputDecoration(labelText: 'Издательство (М:1) *'),
-          items: allPublishers.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(),
-          onChanged: (v) { setState(() { _selectedPublisherId = v; _selectedAuthorIds.clear(); _isDirty = true; }); },
-          validator: (v) => v == null ? 'Выберите издательство' : null,
-        ),
-        const SizedBox(height: 16),
-        
-        FormField<List<int>>(
-          initialValue: _selectedAuthorIds,
-          validator: (v) => (v == null || v.isEmpty) ? 'Выберите хотя бы одного автора' : null,
-          builder: (field) => InputDecorator(
-            decoration: InputDecoration(labelText: 'Авторы (M:N) *', errorText: field.errorText),
-            child: Wrap(
-              spacing: 8,
-              children: availableAuthors.map((a) {
-                final sel = field.value!.contains(a.id);
-                return FilterChip(
-                  label: Text(a.lastName), selected: sel,
-                  onSelected: (_) {
-                    final next = [...field.value!]; sel ? next.remove(a.id) : next.add(a.id);
-                    field.didChange(next); setState(() { _selectedAuthorIds = next; _isDirty = true; });
-                  },
+        FutureBuilder<List<Author>>(
+          future: allAuthors,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? [];
+            return FormField<List<int>>(
+              initialValue: _selectedAuthorIds,
+              validator: (v) => _serverErrors['authorIds'] ?? ((v == null || v.isEmpty) ? 'Выберите хотя бы одного автора' : null),
+              builder: (field) {
+                return InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Авторы *',
+                    errorText: field.errorText,
+                    border: const OutlineInputBorder(),
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    children: items.map((a) {
+                      final isSelected = field.value!.contains(a.id);
+                      return FilterChip(
+                        label: Text('${a.lastName} ${a.firstName}'.trim()),
+                        selected: isSelected,
+                        onSelected: _saving ? null : (selected) {
+                          final next = List<int>.from(field.value!);
+                          if (selected) next.add(a.id);
+                          else next.remove(a.id);
+                          field.didChange(next);
+                          setState(() {
+                            _selectedAuthorIds = next;
+                            _isDirty = true;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
                 );
-              }).toList(),
-            ),
-          ),
+              },
+            );
+          }
         ),
-        const SizedBox(height: 16),
-        
-        FormField<List<int>>(
-          initialValue: _selectedGenreIds,
-          validator: (v) => (v == null || v.isEmpty) ? 'Выберите хотя бы один жанр' : null,
-          builder: (field) => InputDecorator(
-            decoration: InputDecoration(labelText: 'Жанры (M:N) *', errorText: field.errorText),
-            child: Wrap(
-              spacing: 8,
-              children: allGenres.map((g) {
-                final sel = field.value!.contains(g.id);
-                return FilterChip(
-                  label: Text(g.name), selected: sel,
-                  onSelected: (_) {
-                    final next = [...field.value!]; sel ? next.remove(g.id) : next.add(g.id);
-                    field.didChange(next); setState(() { _selectedGenreIds = next; _isDirty = true; });
-                  },
+        const SizedBox(height: 24),
+
+        FutureBuilder<List<Genre>>(
+          future: allGenres,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? [];
+            return FormField<List<int>>(
+              initialValue: _selectedGenreIds,
+              validator: (v) => _serverErrors['genreIds'] ?? ((v == null || v.isEmpty) ? 'Выберите хотя бы один жанр' : null),
+              builder: (field) {
+                return InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Жанры *',
+                    errorText: field.errorText,
+                    border: const OutlineInputBorder(),
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    children: items.map((g) {
+                      final isSelected = field.value!.contains(g.id);
+                      return FilterChip(
+                        label: Text(g.name),
+                        selected: isSelected,
+                        onSelected: _saving ? null : (selected) {
+                          final next = List<int>.from(field.value!);
+                          if (selected) next.add(g.id);
+                          else next.remove(g.id);
+                          field.didChange(next);
+                          setState(() {
+                            _selectedGenreIds = next;
+                            _isDirty = true;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
                 );
-              }).toList(),
-            ),
-          ),
+              },
+            );
+          }
         ),
       ],
     );

@@ -6,6 +6,8 @@ import '../repositories/genre_repo.dart';
 import '../repositories/publisher_repo.dart';
 import '../models/list_filter.dart';
 import '../models/book.dart';
+import '../models/genre.dart';
+import '../models/publisher.dart';
 import '../widgets/adaptive_grid.dart';
 
 class BookScreen extends StatefulWidget {
@@ -46,10 +48,6 @@ class _BookScreenState extends State<BookScreen> {
   Widget build(BuildContext context) {
     final prov = context.watch<BookProvider>();
     final f = prov.filter;
-    
-    // Получаем справочники для фильтров
-    final genres = context.watch<GenreRepo>().getAllActive();
-    final publishers = context.watch<PublisherRepo>().getAllActive();
 
     return Scaffold(
       appBar: AppBar(
@@ -73,7 +71,7 @@ class _BookScreenState extends State<BookScreen> {
       ),
       body: Column(
         children: [
-          // ПАНЕЛЬ ПОИСКА И ФИЛЬТРОВ (сверху)
+
           Padding(
             padding: const EdgeInsets.all(16.0), 
             child: Row(
@@ -83,62 +81,95 @@ class _BookScreenState extends State<BookScreen> {
                   flex: 2,
                   child: TextField(
                     controller: _searchCtrl, 
-                    decoration: const InputDecoration(labelText: 'Поиск по названию или ISBN', prefixIcon: Icon(Icons.search)), 
+                    decoration: const InputDecoration(labelText: 'Поиск (Название/ISBN)', prefixIcon: Icon(Icons.search)), 
                     onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
                   ),
                 ),
                 const SizedBox(width: 16),
+
                 Expanded(
                   flex: 1,
-                  child: DropdownButtonFormField<int?>(
-                    value: f.genreId,
-                    decoration: const InputDecoration(labelText: 'Жанр'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Все жанры')),
-                      ...genres.map((g) => DropdownMenuItem(value: g.id, child: Text(g.name)))
-                    ],
-                    // Пересоздаем фильтр, чтобы корректно сбросить null значения
-                    onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: v, publisherId: f.publisherId)),
+                  child: FutureBuilder<List<Genre>>(
+                    future: context.read<GenreRepo>().getAllActive(),
+                    builder: (context, snapshot) {
+                      final genres = snapshot.data ?? [];
+                      return DropdownButtonFormField<int?>(
+                        value: f.genreId,
+                        decoration: const InputDecoration(labelText: 'Жанр'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Все жанры')),
+                          ...genres.map((g) => DropdownMenuItem(value: g.id, child: Text(g.name)))
+                        ],
+                        onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: v, publisherId: f.publisherId)),
+                      );
+                    }
                   ),
                 ),
                 const SizedBox(width: 16),
+                
+                // Фильтр по издательствам (асинхронно берется из кэшированного API)
                 Expanded(
                   flex: 1,
-                  child: DropdownButtonFormField<int?>(
-                    value: f.publisherId,
-                    decoration: const InputDecoration(labelText: 'Издательство'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Все издательства')),
-                      ...publishers.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
-                    ],
-                    onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: f.genreId, publisherId: v)),
+                  child: FutureBuilder<List<Publisher>>(
+                    future: context.read<PublisherRepo>().getAllActive(),
+                    builder: (context, snapshot) {
+                      final publishers = snapshot.data ?? [];
+                      return DropdownButtonFormField<int?>(
+                        value: f.publisherId,
+                        decoration: const InputDecoration(labelText: 'Издательство'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Все издательства')),
+                          ...publishers.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
+                        ],
+                        onChanged: (v) => _applyFilter(ListFilter(search: f.search, sortBy: f.sortBy, isAscending: f.isAscending, page: 1, limit: f.limit, showDeleted: f.showDeleted, genreId: f.genreId, publisherId: v)),
+                      );
+                    }
                   ),
                 ),
               ],
             )
           ),
+          
+          // ТАБЛИЦА С СОСТОЯНИЯМИ
           Expanded(
-            child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
-                   prov.state == ScreenState.error ? Center(child: Text('Ошибка: ${prov.error}')) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Книги не найдены.')) :
-                   AdaptiveDataGrid<Book>(
-                     items: prov.data.items, 
-                     idExtractor: (b) => b.id, 
-                     isDeleted: (b) => b.isDeleted,
-                     selectedIds: prov.selectedIds, 
-                     onToggle: prov.toggleSelection, 
-                     currentSort: f.sortBy, 
-                     isAscending: f.isAscending,
-                     onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/books/$id'),
-                     columns: [
-                       ColumnDef(title: 'Название', sortKey: 'title', valueBuilder: (b) => b.title),
-                       ColumnDef(title: 'ISBN', sortKey: 'isbn', valueBuilder: (b) => b.isbn),
-                       ColumnDef(title: 'Год', sortKey: 'year', valueBuilder: (b) => b.year.toString()),
-                       ColumnDef(title: 'Страниц', sortKey: 'pages', valueBuilder: (b) => b.pages.toString()),
-                     ],
-                   ),
+            child: switch (prov.state) {
+              ScreenState.loading => const Center(child: CircularProgressIndicator()),
+              ScreenState.empty => const Center(child: Text('Список пуст. Измените фильтры.')),
+              ScreenState.error => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Ошибка: ${prov.error}', style: const TextStyle(color: Colors.red, fontSize: 16)),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => prov.updateFilter(prov.filter),
+                        label: const Text('Повторить попытку'),
+                      )
+                    ],
+                  ),
+                ),
+              ScreenState.data => AdaptiveDataGrid<Book>(
+                items: prov.data.items,
+                idExtractor: (b) => b.id,
+                isDeleted: (b) => b.isDeleted,
+                selectedIds: prov.selectedIds,
+                onToggle: prov.toggleSelection,
+                currentSort: f.sortBy,
+                isAscending: f.isAscending,
+                onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
+                onRowTap: (id) => context.go('/books/$id'),
+                columns: [
+                  ColumnDef(title: 'Название', sortKey: 'title', valueBuilder: (b) => b.title),
+                  ColumnDef(title: 'ISBN', sortKey: 'isbn', valueBuilder: (b) => b.isbn),
+                  ColumnDef(title: 'Год', sortKey: 'year', valueBuilder: (b) => b.year.toString()),
+                  ColumnDef(title: 'Страниц', sortKey: 'pages', valueBuilder: (b) => b.pages.toString()),
+                ],
+              ),
+            },
           ),
+          
+          // ПАГИНАЦИЯ (Снизу как на макете)
           if (prov.state == ScreenState.data)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),

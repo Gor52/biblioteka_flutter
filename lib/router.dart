@@ -107,7 +107,7 @@ final router = GoRouter(
       },
     ),
     GoRoute(path: '/publishers/new', builder: (_, __) => const PublisherFormScreen()),
-    GoRoute(path: '/publishers/:id/edit', builder: (_, state) => PublisherFormScreen(pubId: int.tryParse(state.pathParameters['id'] ?? ''))),
+    GoRoute(path: '/publishers/:id/edit', builder: (_, state) => PublisherFormScreen(publisherId: int.tryParse(state.pathParameters['id'] ?? ''))),
     GoRoute(path: '/publishers/:id', builder: (_, state) => PublisherDetailScreen(pubId: int.tryParse(state.pathParameters['id'] ?? '') ?? 0)),
 
     GoRoute(

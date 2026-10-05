@@ -70,30 +70,46 @@ class _ReaderScreenState extends State<ReaderScreen> {
             padding: const EdgeInsets.all(16.0), 
             child: TextField(
               controller: _searchCtrl, 
-              decoration: const InputDecoration(labelText: 'Поиск по имени или email', prefixIcon: Icon(Icons.search)), 
+              decoration: const InputDecoration(labelText: 'Поиск по ФИО или Email', prefixIcon: Icon(Icons.search)), 
               onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
             )
           ),
           Expanded(
-            child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
-                   prov.state == ScreenState.error ? Center(child: Text('Ошибка: ${prov.error}')) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Читатели не найдены.')) :
-                   AdaptiveDataGrid<Reader>(
-                     items: prov.data.items, 
-                     idExtractor: (r) => r.id, 
-                     isDeleted: (r) => r.isDeleted,
-                     selectedIds: prov.selectedIds, 
-                     onToggle: prov.toggleSelection, 
-                     currentSort: f.sortBy, 
-                     isAscending: f.isAscending,
-                     onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/readers/$id'),
-                     columns: [
-                       ColumnDef(title: 'ФИО', sortKey: 'fullName', valueBuilder: (r) => r.fullName),
-                       ColumnDef(title: 'E-mail', sortKey: 'email', valueBuilder: (r) => r.email),
-                       ColumnDef(title: 'Телефон', sortKey: 'phone', valueBuilder: (r) => r.phone),
-                     ],
-                   ),
+            child: switch (prov.state) {
+              ScreenState.loading => const Center(child: CircularProgressIndicator()),
+              ScreenState.empty => const Center(child: Text('Читатели не найдены.')),
+              ScreenState.error => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Ошибка: ${prov.error}', style: const TextStyle(color: Colors.red, fontSize: 16)),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => prov.updateFilter(prov.filter),
+                        label: const Text('Повторить попытку'),
+                      )
+                    ],
+                  ),
+                ),
+              ScreenState.data => AdaptiveDataGrid<Reader>(
+                items: prov.data.items, 
+                idExtractor: (r) => r.id, 
+                isDeleted: (r) => r.isDeleted,
+                selectedIds: prov.selectedIds, 
+                onToggle: prov.toggleSelection, 
+                currentSort: f.sortBy, 
+                isAscending: f.isAscending,
+                onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
+                onRowTap: (id) => context.go('/readers/$id'),
+                columns: [
+                  ColumnDef(title: 'ФИО', sortKey: 'fullName', valueBuilder: (r) => r.fullName),
+                  ColumnDef(title: 'E-mail', sortKey: 'email', valueBuilder: (r) => r.email),
+                  ColumnDef(title: 'Телефон', sortKey: 'phone', valueBuilder: (r) => r.phone),
+                  ColumnDef(title: 'Билет', sortKey: 'cardNumber', valueBuilder: (r) => r.card.cardNumber),
+                ],
+              ),
+            },
           ),
           if (prov.state == ScreenState.data)
             Padding(

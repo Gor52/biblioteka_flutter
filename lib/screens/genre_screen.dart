@@ -6,6 +6,7 @@ import '../state/book_provider.dart' show ScreenState;
 import '../models/list_filter.dart';
 import '../models/genre.dart';
 import '../widgets/adaptive_grid.dart';
+import '../core/api_exceptions.dart';
 
 class GenreScreen extends StatefulWidget {
   final ListFilter initFilter;
@@ -39,6 +40,33 @@ class _GenreScreenState extends State<GenreScreen> {
     }).toString());
   }
 
+  void _confirmDelete(BuildContext context, GenreProvider prov, String action) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удаление'),
+        content: Text('Удалить выбранные жанры (${prov.selectedIds.length} шт)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          FilledButton(
+            style: action == 'hard' ? FilledButton.styleFrom(backgroundColor: Colors.red) : null,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await prov.executeBatch(action);
+              } on ConflictException catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+              } on ApiException catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+              }
+            },
+            child: const Text('Подтвердить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<GenreProvider>();
@@ -46,7 +74,7 @@ class _GenreScreenState extends State<GenreScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Жанры'), 
+        title: const Text('Жанры'),
         leading: BackButton(onPressed: () => context.go('/')),
         actions: [
           Row(
@@ -56,11 +84,11 @@ class _GenreScreenState extends State<GenreScreen> {
             ]
           ),
           if (prov.selectedIds.isNotEmpty && !f.showDeleted) 
-            IconButton(icon: const Icon(Icons.delete), onPressed: () => prov.executeBatch('soft')),
+            IconButton(icon: const Icon(Icons.delete), onPressed: () => _confirmDelete(context, prov, 'soft')),
           if (prov.selectedIds.isNotEmpty && f.showDeleted) 
             IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
           if (prov.selectedIds.isNotEmpty) 
-            IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => prov.executeBatch('hard')),
+            IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => _confirmDelete(context, prov, 'hard')),
           IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/genres/new')),
         ],
       ),
@@ -75,20 +103,38 @@ class _GenreScreenState extends State<GenreScreen> {
             )
           ),
           Expanded(
-            child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Пусто.')) :
-                   AdaptiveDataGrid<Genre>(
-                     items: prov.data.items, 
-                     idExtractor: (g) => g.id, 
-                     isDeleted: (g) => g.isDeleted,
-                     selectedIds: prov.selectedIds, 
-                     onToggle: prov.toggleSelection, 
-                     currentSort: f.sortBy, 
-                     isAscending: f.isAscending,
-                     onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/genres/$id'),
-                     columns: [ColumnDef(title: 'Название', sortKey: 'name', valueBuilder: (g) => g.name)],
-                   ),
+            child: switch (prov.state) {
+              ScreenState.loading => const Center(child: CircularProgressIndicator()),
+              ScreenState.empty => const Center(child: Text('Жанры не найдены.')),
+              ScreenState.error => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Ошибка: ${prov.error}', style: const TextStyle(color: Colors.red, fontSize: 16)),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => prov.updateFilter(prov.filter),
+                        label: const Text('Повторить попытку'),
+                      )
+                    ],
+                  ),
+                ),
+              ScreenState.data => AdaptiveDataGrid<Genre>(
+                items: prov.data.items, 
+                idExtractor: (g) => g.id, 
+                isDeleted: (g) => g.isDeleted,
+                selectedIds: prov.selectedIds, 
+                onToggle: prov.toggleSelection, 
+                currentSort: f.sortBy, 
+                isAscending: f.isAscending,
+                onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
+                onRowTap: (id) => context.go('/genres/$id'),
+                columns: [
+                  ColumnDef(title: 'Название', sortKey: 'name', valueBuilder: (g) => g.name),
+                ],
+              ),
+            },
           ),
           if (prov.state == ScreenState.data)
             Padding(

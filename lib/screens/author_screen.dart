@@ -70,30 +70,46 @@ class _AuthorScreenState extends State<AuthorScreen> {
             padding: const EdgeInsets.all(16.0), 
             child: TextField(
               controller: _searchCtrl, 
-              decoration: const InputDecoration(labelText: 'Поиск по ФИО', prefixIcon: Icon(Icons.search)), 
+              decoration: const InputDecoration(labelText: 'Поиск по ФИО или стране', prefixIcon: Icon(Icons.search)), 
               onSubmitted: (v) => _applyFilter(f.copyWith(search: v, page: 1))
             )
           ),
           Expanded(
-            child: prov.state == ScreenState.loading ? const Center(child: CircularProgressIndicator()) :
-                   prov.state == ScreenState.error ? Center(child: Text('Ошибка: ${prov.error}')) :
-                   prov.state == ScreenState.empty ? const Center(child: Text('Авторы не найдены.')) :
-                   AdaptiveDataGrid<Author>(
-                     items: prov.data.items, 
-                     idExtractor: (a) => a.id, 
-                     isDeleted: (a) => a.isDeleted,
-                     selectedIds: prov.selectedIds, 
-                     onToggle: prov.toggleSelection, 
-                     currentSort: f.sortBy, 
-                     isAscending: f.isAscending,
-                     onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
-                     onRowTap: (id) => context.go('/authors/$id'),
-                     columns: [
-                       ColumnDef(title: 'Фамилия', sortKey: 'lastName', valueBuilder: (a) => a.lastName),
-                       ColumnDef(title: 'Имя', sortKey: 'firstName', valueBuilder: (a) => a.firstName),
-                       ColumnDef(title: 'Год рождения', sortKey: 'birthYear', valueBuilder: (a) => a.birthYear.toString()),
-                     ],
-                   ),
+            child: switch (prov.state) {
+              ScreenState.loading => const Center(child: CircularProgressIndicator()),
+              ScreenState.empty => const Center(child: Text('Авторы не найдены.')),
+              ScreenState.error => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Ошибка: ${prov.error}', style: const TextStyle(color: Colors.red, fontSize: 16)),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => prov.updateFilter(prov.filter),
+                        label: const Text('Повторить попытку'),
+                      )
+                    ],
+                  ),
+                ),
+              ScreenState.data => AdaptiveDataGrid<Author>(
+                items: prov.data.items, 
+                idExtractor: (a) => a.id, 
+                isDeleted: (a) => a.isDeleted,
+                selectedIds: prov.selectedIds, 
+                onToggle: prov.toggleSelection, 
+                currentSort: f.sortBy, 
+                isAscending: f.isAscending,
+                onSort: (key) => _applyFilter(f.copyWith(sortBy: key, isAscending: f.sortBy == key ? !f.isAscending : true)),
+                onRowTap: (id) => context.go('/authors/$id'),
+                columns: [
+                  ColumnDef(title: 'Фамилия', sortKey: 'lastName', valueBuilder: (a) => a.lastName),
+                  ColumnDef(title: 'Имя', sortKey: 'firstName', valueBuilder: (a) => a.firstName),
+                  ColumnDef(title: 'Страна', sortKey: 'country', valueBuilder: (a) => a.country),
+                  ColumnDef(title: 'Год рождения', sortKey: 'birthYear', valueBuilder: (a) => a.birthYear.toString()),
+                ],
+              ),
+            },
           ),
           if (prov.state == ScreenState.data)
             Padding(

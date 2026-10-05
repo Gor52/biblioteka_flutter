@@ -6,10 +6,12 @@ import '../models/library_card.dart';
 import '../utils/validators.dart';
 import '../widgets/generic_form_layout.dart';
 import '../repositories/reader_repo.dart';
+import '../core/api_exceptions.dart';
 
 class ReaderFormScreen extends StatefulWidget {
   final int? readerId;
   const ReaderFormScreen({super.key, this.readerId});
+  
   bool get isEditing => readerId != null;
 
   @override
@@ -18,18 +20,18 @@ class ReaderFormScreen extends StatefulWidget {
 
 class _ReaderFormScreenState extends State<ReaderFormScreen> {
   final _formKey = GlobalKey<FormState>();
-
-  final _nameCtrl = TextEditingController();
+  final _fullNameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _cardNumberCtrl = TextEditingController();
   
-  final _cardNumberCtrl = TextEditingController(text: 'БК-001');
-  bool _cardIsActive = true;
+  bool _isActive = true;
   DateTime _issuedAt = DateTime.now();
-  
-  String? _emailErrorText;
+
   bool _isLoading = true;
   bool _isDirty = false;
+  bool _saving = false;
+  Map<String, String> _serverErrors = {};
 
   @override
   void initState() {
@@ -41,11 +43,11 @@ class _ReaderFormScreenState extends State<ReaderFormScreen> {
     if (widget.isEditing) {
       final reader = await context.read<ReaderRepo>().findById(widget.readerId!);
       if (reader != null) {
-        _nameCtrl.text = reader.fullName;
+        _fullNameCtrl.text = reader.fullName;
         _emailCtrl.text = reader.email;
         _phoneCtrl.text = reader.phone;
         _cardNumberCtrl.text = reader.card.cardNumber;
-        _cardIsActive = reader.card.isActive;
+        _isActive = reader.card.isActive;
         _issuedAt = reader.card.issuedAt;
       }
     }
@@ -53,30 +55,38 @@ class _ReaderFormScreenState extends State<ReaderFormScreen> {
   }
 
   void _submit() async {
-    setState(() => _emailErrorText = null);
+    setState(() => _serverErrors = {});
     if (!_formKey.currentState!.validate()) return;
     
-    final repo = context.read<ReaderRepo>();
-
-    if (repo.isEmailTaken(_emailCtrl.text, excludeId: widget.readerId)) {
-      setState(() {
-        _emailErrorText = 'Этот E-mail уже используется';
-        _formKey.currentState!.validate();
-      });
-      return;
-    }
-
-    final reader = Reader(
-      id: widget.readerId ?? 0, 
-      fullName: _nameCtrl.text, 
-      email: _emailCtrl.text,
-      phone: _phoneCtrl.text,
-      card: LibraryCard(cardNumber: _cardNumberCtrl.text, issuedAt: _issuedAt, isActive: _cardIsActive),
-    );
+    setState(() => _saving = true);
     
-    await repo.saveOrUpdate(reader);
-    _isDirty = false;
-    if (mounted) context.go('/readers');
+    try {
+      final reader = Reader(
+        id: widget.readerId ?? 0, 
+        fullName: _fullNameCtrl.text,
+        email: _emailCtrl.text,
+        phone: _phoneCtrl.text,
+        card: LibraryCard(
+          cardNumber: _cardNumberCtrl.text,
+          isActive: _isActive,
+          issuedAt: _issuedAt,
+        )
+      );
+      
+      await context.read<ReaderRepo>().saveOrUpdate(reader);
+      _isDirty = false;
+      if (mounted) context.go('/readers');
+      
+    } on ValidationException catch (e) {
+      setState(() => _serverErrors = e.errors);
+      _formKey.currentState!.validate(); 
+    } on ConflictException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -87,31 +97,66 @@ class _ReaderFormScreenState extends State<ReaderFormScreen> {
       title: widget.isEditing ? 'Редактирование читателя' : 'Новый читатель',
       isDirty: _isDirty, 
       formKey: _formKey, 
-      submitLabel: 'Сохранить читателя',
+      submitLabel: _saving ? 'Сохранение...' : 'Сохранить',
       onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); }, 
-      onSubmit: _submit,
+      onSubmit: _saving ? () {} : _submit, 
       onBack: () => context.go('/readers'),
       fields: [
-        TextFormField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'ФИО *'), validator: AppValidators.requiredField),
-        const SizedBox(height: 16),
         TextFormField(
-          controller: _emailCtrl, 
-          decoration: const InputDecoration(labelText: 'E-mail *'), 
-          validator: (v) { if (_emailErrorText != null) return _emailErrorText; return AppValidators.email(v); }
+          controller: _fullNameCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'ФИО *'), 
+          validator: (v) => _serverErrors['fullName'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
         ),
         const SizedBox(height: 16),
-        TextFormField(controller: _phoneCtrl, decoration: const InputDecoration(labelText: 'Телефон *'), validator: AppValidators.requiredField),
-        
-        const SizedBox(height: 32),
-        const Text('Читательский билет (Вложенная сущность 1:1)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _emailCtrl, 
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'E-mail *'), 
+                validator: (v) => _serverErrors['email'] ?? AppValidators.email(v),
+                onChanged: (_) => setState(() => _isDirty = true),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: TextFormField(
+                controller: _phoneCtrl, 
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Телефон *'), 
+                validator: (v) => _serverErrors['phone'] ?? AppValidators.requiredField(v),
+                onChanged: (_) => setState(() => _isDirty = true),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
         const Divider(),
-        const SizedBox(height: 8),
-        TextFormField(controller: _cardNumberCtrl, decoration: const InputDecoration(labelText: 'Номер билета *'), validator: AppValidators.requiredField),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0),
+          child: Text('Читательский билет (Связь 1:1)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        TextFormField(
+          controller: _cardNumberCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'Номер билета *'), 
+          validator: (v) => _serverErrors['cardNumber'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
+        ),
+        const SizedBox(height: 16),
         SwitchListTile(
-          title: const Text('Билет активен'), 
-          value: _cardIsActive, 
-          onChanged: (v) => setState(() { _cardIsActive = v; _isDirty = true; })
-        )
+          title: const Text('Билет активен'),
+          value: _isActive,
+          onChanged: _saving ? null : (val) {
+            setState(() {
+              _isActive = val;
+              _isDirty = true;
+            });
+          },
+        ),
       ],
     );
   }

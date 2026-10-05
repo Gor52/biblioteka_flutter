@@ -5,11 +5,13 @@ import '../models/publisher.dart';
 import '../utils/validators.dart';
 import '../widgets/generic_form_layout.dart';
 import '../repositories/publisher_repo.dart';
+import '../core/api_exceptions.dart';
 
 class PublisherFormScreen extends StatefulWidget {
-  final int? pubId;
-  const PublisherFormScreen({super.key, this.pubId});
-  bool get isEditing => pubId != null;
+  final int? publisherId;
+  const PublisherFormScreen({super.key, this.publisherId});
+  
+  bool get isEditing => publisherId != null;
 
   @override
   State<PublisherFormScreen> createState() => _PublisherFormScreenState();
@@ -22,6 +24,8 @@ class _PublisherFormScreenState extends State<PublisherFormScreen> {
   
   bool _isLoading = true;
   bool _isDirty = false;
+  bool _saving = false;
+  Map<String, String> _serverErrors = {};
 
   @override
   void initState() {
@@ -31,7 +35,7 @@ class _PublisherFormScreenState extends State<PublisherFormScreen> {
 
   Future<void> _loadData() async {
     if (widget.isEditing) {
-      final pub = await context.read<PublisherRepo>().findById(widget.pubId!);
+      final pub = await context.read<PublisherRepo>().findById(widget.publisherId!);
       if (pub != null) {
         _nameCtrl.text = pub.name;
         _cityCtrl.text = pub.city;
@@ -41,15 +45,32 @@ class _PublisherFormScreenState extends State<PublisherFormScreen> {
   }
 
   void _submit() async {
+    setState(() => _serverErrors = {});
     if (!_formKey.currentState!.validate()) return;
     
-    await context.read<PublisherRepo>().saveOrUpdate(Publisher(
-      id: widget.pubId ?? 0, 
-      name: _nameCtrl.text, 
-      city: _cityCtrl.text,
-    ));
-    _isDirty = false;
-    if (mounted) context.go('/publishers');
+    setState(() => _saving = true);
+    
+    try {
+      final pub = Publisher(
+        id: widget.publisherId ?? 0, 
+        name: _nameCtrl.text,
+        city: _cityCtrl.text,
+      );
+      
+      await context.read<PublisherRepo>().saveOrUpdate(pub);
+      _isDirty = false;
+      if (mounted) context.go('/publishers');
+      
+    } on ValidationException catch (e) {
+      setState(() => _serverErrors = e.errors);
+      _formKey.currentState!.validate(); 
+    } on ConflictException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -58,13 +79,28 @@ class _PublisherFormScreenState extends State<PublisherFormScreen> {
 
     return GenericFormLayout(
       title: widget.isEditing ? 'Редактирование издательства' : 'Новое издательство',
-      isDirty: _isDirty, formKey: _formKey, submitLabel: 'Сохранить',
-      onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); }, onSubmit: _submit,
+      isDirty: _isDirty, 
+      formKey: _formKey, 
+      submitLabel: _saving ? 'Сохранение...' : 'Сохранить',
+      onMarkDirty: () { if (!_isDirty) setState(() => _isDirty = true); }, 
+      onSubmit: _saving ? () {} : _submit, 
       onBack: () => context.go('/publishers'),
       fields: [
-        TextFormField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Название *'), validator: AppValidators.requiredField),
+        TextFormField(
+          controller: _nameCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'Название издательства *'), 
+          validator: (v) => _serverErrors['name'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
+        ),
         const SizedBox(height: 16),
-        TextFormField(controller: _cityCtrl, decoration: const InputDecoration(labelText: 'Город *'), validator: AppValidators.requiredField),
+        TextFormField(
+          controller: _cityCtrl, 
+          enabled: !_saving,
+          decoration: const InputDecoration(labelText: 'Город *'), 
+          validator: (v) => _serverErrors['city'] ?? AppValidators.requiredField(v),
+          onChanged: (_) => setState(() => _isDirty = true),
+        ),
       ],
     );
   }
