@@ -17,6 +17,23 @@ class AppValidators {
     return null;
   }
 
+  static String? password(String? value) {
+    final text = value ?? '';
+    if (text.isEmpty) {
+      return 'Введите пароль';
+    }
+    if (text.length < 8) {
+      return 'Пароль не короче 8 символов';
+    }
+    if (!RegExp(r'\d').hasMatch(text)) {
+      return 'Добавьте хотя бы одну цифру';
+    }
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-]').hasMatch(text)) {
+      return 'Добавьте хотя бы один специальный символ';
+    }
+    return null;
+  }
+
   static String? year(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Введите год';

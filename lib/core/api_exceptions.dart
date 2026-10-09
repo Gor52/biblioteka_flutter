@@ -56,6 +56,7 @@ ApiException mapHttpError(int status, dynamic body) {
 ApiException mapDioError(DioException e) {
   final existing = e.error;
   if (existing is ApiException) return existing;
+  
   return switch (e.type) {
     DioExceptionType.connectionTimeout || 
     DioExceptionType.sendTimeout || 
@@ -64,6 +65,8 @@ ApiException mapDioError(DioException e) {
     DioExceptionType.connectionError =>
       const NetworkException('Не удалось соединиться с сервером. Проверьте CORS или сеть.'),
     DioExceptionType.cancel => const NetworkException('Запрос отменён.'),
+    DioExceptionType.badResponse => 
+      mapHttpError(e.response?.statusCode ?? 500, e.response?.data),
     _ => const ServerException(),
   };
 }

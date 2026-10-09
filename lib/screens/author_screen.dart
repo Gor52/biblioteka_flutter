@@ -6,6 +6,7 @@ import '../state/book_provider.dart' show ScreenState;
 import '../models/list_filter.dart';
 import '../models/author.dart';
 import '../widgets/adaptive_grid.dart';
+import '../core/api_exceptions.dart'; 
 
 class AuthorScreen extends StatefulWidget {
   final ListFilter initFilter;
@@ -39,6 +40,35 @@ class _AuthorScreenState extends State<AuthorScreen> {
     }).toString());
   }
 
+  // ДОБАВЛЕН МЕТОД БЕЗОПАСНОГО УДАЛЕНИЯ С ПЕРЕХВАТОМ ОШИБОК
+  void _confirmDelete(BuildContext context, AuthorProvider prov, String action) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удаление'),
+        content: Text('Удалить выбранных авторов (${prov.selectedIds.length} шт)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          FilledButton(
+            style: action == 'hard' ? FilledButton.styleFrom(backgroundColor: Colors.red) : null,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await prov.executeBatch(action);
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Успешно удалено'), backgroundColor: Colors.green));
+              } on ConflictException catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange.shade700));
+              } on ApiException catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+              }
+            },
+            child: const Text('Подтвердить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<AuthorProvider>();
@@ -56,11 +86,11 @@ class _AuthorScreenState extends State<AuthorScreen> {
             ]
           ),
           if (prov.selectedIds.isNotEmpty && !f.showDeleted) 
-            IconButton(icon: const Icon(Icons.delete), onPressed: () => prov.executeBatch('soft')),
+            IconButton(icon: const Icon(Icons.delete), onPressed: () => _confirmDelete(context, prov, 'soft')),
           if (prov.selectedIds.isNotEmpty && f.showDeleted) 
             IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
           if (prov.selectedIds.isNotEmpty) 
-            IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => prov.executeBatch('hard')),
+            IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => _confirmDelete(context, prov, 'hard')),
           IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/authors/new')),
         ],
       ),

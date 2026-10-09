@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../state/book_provider.dart';
+import '../state/auth_provider.dart'; 
+import '../models/app_user.dart';     
 import '../repositories/genre_repo.dart';
 import '../repositories/publisher_repo.dart';
 import '../models/list_filter.dart';
@@ -9,6 +11,7 @@ import '../models/book.dart';
 import '../models/genre.dart';
 import '../models/publisher.dart';
 import '../widgets/adaptive_grid.dart';
+import '../core/api_exceptions.dart'; 
 
 class BookScreen extends StatefulWidget {
   final ListFilter initFilter;
@@ -44,29 +47,74 @@ class _BookScreenState extends State<BookScreen> {
     }).toString());
   }
 
+  void _confirmDelete(BuildContext context, BookProvider prov, String action) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удаление'),
+        content: Text('Удалить выбранные книги (${prov.selectedIds.length} шт)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          FilledButton(
+            style: action == 'hard' ? FilledButton.styleFrom(backgroundColor: Colors.red) : null,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await prov.executeBatch(action);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Успешно удалено'), backgroundColor: Colors.green)
+                  );
+                }
+              } on ConflictException catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.message), backgroundColor: Colors.orange.shade700)
+                  );
+                }
+              } on ApiException catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.message), backgroundColor: Colors.red)
+                  );
+                }
+              }
+            },
+            child: const Text('Подтвердить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<BookProvider>();
     final f = prov.filter;
+
+    // === ИЗМЕНЕННАЯ СТРОКА: Проверяем по иерархии прав ===
+    final isLibrarian = context.watch<AuthProvider>().has(Role.librarian);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Каталог книг'),
         leading: BackButton(onPressed: () => context.go('/')),
         actions: [
-          Row(
-            children: [
-              const Text('Удаленные'), 
-              Switch(value: f.showDeleted, onChanged: (v) => _applyFilter(f.copyWith(showDeleted: v, page: 1)))
-            ]
-          ),
-          if (prov.selectedIds.isNotEmpty && !f.showDeleted) 
-            IconButton(icon: const Icon(Icons.delete), onPressed: () => prov.executeBatch('soft')),
-          if (prov.selectedIds.isNotEmpty && f.showDeleted) 
-            IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
-          if (prov.selectedIds.isNotEmpty) 
-            IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => prov.executeBatch('hard')),
-          IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/books/new')),
+          if (isLibrarian) ...[
+            Row(
+              children: [
+                const Text('Удаленные'), 
+                Switch(value: f.showDeleted, onChanged: (v) => _applyFilter(f.copyWith(showDeleted: v, page: 1)))
+              ]
+            ),
+            if (prov.selectedIds.isNotEmpty && !f.showDeleted) 
+              IconButton(icon: const Icon(Icons.delete), onPressed: () => _confirmDelete(context, prov, 'soft')),
+            if (prov.selectedIds.isNotEmpty && f.showDeleted) 
+              IconButton(icon: const Icon(Icons.restore), onPressed: () => prov.executeBatch('restore')),
+            if (prov.selectedIds.isNotEmpty) 
+              IconButton(icon: const Icon(Icons.delete_forever, color: Colors.red), onPressed: () => _confirmDelete(context, prov, 'hard')),
+            IconButton(icon: const Icon(Icons.add), onPressed: () => context.go('/books/new')),
+          ],
         ],
       ),
       body: Column(
@@ -106,8 +154,7 @@ class _BookScreenState extends State<BookScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                
-                // Фильтр по издательствам (асинхронно берется из кэшированного API)
+
                 Expanded(
                   flex: 1,
                   child: FutureBuilder<List<Publisher>>(
@@ -129,8 +176,7 @@ class _BookScreenState extends State<BookScreen> {
               ],
             )
           ),
-          
-          // ТАБЛИЦА С СОСТОЯНИЯМИ
+
           Expanded(
             child: switch (prov.state) {
               ScreenState.loading => const Center(child: CircularProgressIndicator()),
@@ -168,8 +214,7 @@ class _BookScreenState extends State<BookScreen> {
               ),
             },
           ),
-          
-          // ПАГИНАЦИЯ (Снизу как на макете)
+
           if (prov.state == ScreenState.data)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),

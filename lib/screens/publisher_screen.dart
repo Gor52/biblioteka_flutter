@@ -54,8 +54,10 @@ class _PublisherScreenState extends State<PublisherScreen> {
               Navigator.pop(ctx);
               try {
                 await prov.executeBatch(action);
+                // ДОБАВЛЕНО УВЕДОМЛЕНИЕ ОБ УСПЕХЕ
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Успешно удалено'), backgroundColor: Colors.green));
               } on ConflictException catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange.shade700));
               } on ApiException catch (e) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
               }
